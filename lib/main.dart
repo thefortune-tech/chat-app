@@ -1,121 +1,422 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'firebase_options.dart';
 
-void main() {
-  runApp(const MyApp());
+// ─── Auth Bloc ────────────────────────────────────────────────────────────────
+
+abstract class AuthEvent {}
+class SignUp extends AuthEvent {
+  final String email;
+  final String password;
+  SignUp(this.email, this.password);
+}
+class SignIn extends AuthEvent {
+  final String email;
+  final String password;
+  SignIn(this.email, this.password);
+}
+class SignOut extends AuthEvent {}
+
+abstract class AuthState {}
+class AuthInitial extends AuthState {}
+class AuthLoading extends AuthState {}
+class AuthAuthenticated extends AuthState {
+  final User user;
+  AuthAuthenticated(this.user);
+}
+class AuthUnauthenticated extends AuthState {}
+class AuthError extends AuthState {
+  final String message;
+  AuthError(this.message);
+}
+
+class AuthBloc extends Bloc<AuthEvent, AuthState> {
+  final _auth = FirebaseAuth.instance;
+
+  AuthBloc() : super(AuthInitial()) {
+    on<SignUp>((event, emit) async {
+      emit(AuthLoading());
+      try {
+        final result = await _auth.createUserWithEmailAndPassword(
+          email: event.email,
+          password: event.password,
+        );
+        emit(AuthAuthenticated(result.user!));
+      } catch (e) {
+        emit(AuthError(e.toString()));
+      }
+    });
+
+    on<SignIn>((event, emit) async {
+      emit(AuthLoading());
+      try {
+        final result = await _auth.signInWithEmailAndPassword(
+          email: event.email,
+          password: event.password,
+        );
+        emit(AuthAuthenticated(result.user!));
+      } catch (e) {
+        emit(AuthError(e.toString()));
+      }
+    });
+
+    on<SignOut>((event, emit) async {
+      await _auth.signOut();
+      emit(AuthUnauthenticated());
+    });
+  }
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  runApp(
+    BlocProvider(
+      create: (_) => AuthBloc(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+      debugShowCheckedModeBanner: false,
+      home: BlocBuilder<AuthBloc, AuthState>(
+        builder: (context, state) {
+          if (state is AuthAuthenticated) {
+            return ChatScreen(user: state.user);
+          }
+          return const AuthScreen();
+        },
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+// ─── Auth Screen ──────────────────────────────────────────────────────────────
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class AuthScreen extends StatefulWidget {
+  const AuthScreen({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<AuthScreen> createState() => _AuthScreenState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _AuthScreenState extends State<AuthScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isSignUp = false;
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+      backgroundColor: const Color(0xFF0A1628),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('💬', style: TextStyle(fontSize: 64)),
+              const SizedBox(height: 16),
+              Text(
+                _isSignUp ? 'Create Account' : 'Welcome Back',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 32),
+              TextField(
+                controller: _emailController,
+                style: const TextStyle(color: Colors.white),
+                keyboardType: TextInputType.emailAddress,
+                decoration: InputDecoration(
+                  hintText: 'Email',
+                  hintStyle: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.4)),
+                  filled: true,
+                  fillColor: Colors.white.withValues(alpha: 0.08),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _passwordController,
+                style: const TextStyle(color: Colors.white),
+                obscureText: true,
+                decoration: InputDecoration(
+                  hintText: 'Password',
+                  hintStyle: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.4)),
+                  filled: true,
+                  fillColor: Colors.white.withValues(alpha: 0.08),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              BlocConsumer<AuthBloc, AuthState>(
+                listener: (context, state) {
+                  if (state is AuthError) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(state.message)),
+                    );
+                  }
+                },
+                builder: (context, state) {
+                  if (state is AuthLoading) {
+                    return const CircularProgressIndicator(
+                        color: Color(0xFF378ADD));
+                  }
+                  return SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF378ADD),
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        if (_isSignUp) {
+                          context.read<AuthBloc>().add(
+                                SignUp(
+                                  _emailController.text,
+                                  _passwordController.text,
+                                ),
+                              );
+                        } else {
+                          context.read<AuthBloc>().add(
+                                SignIn(
+                                  _emailController.text,
+                                  _passwordController.text,
+                                ),
+                              );
+                        }
+                      },
+                      child: Text(
+                        _isSignUp ? 'Sign Up' : 'Sign In',
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 16),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: () =>
+                    setState(() => _isSignUp = !_isSignUp),
+                child: Text(
+                  _isSignUp
+                      ? 'Already have an account? Sign In'
+                      : 'No account? Sign Up',
+                  style: const TextStyle(color: Color(0xFF378ADD)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+    );
+  }
+}
+
+// ─── Chat Screen ──────────────────────────────────────────────────────────────
+
+class ChatScreen extends StatefulWidget {
+  final User user;
+  const ChatScreen({super.key, required this.user});
+
+  @override
+  State<ChatScreen> createState() => _ChatScreenState();
+}
+
+class _ChatScreenState extends State<ChatScreen> {
+  final _messageController = TextEditingController();
+  final _firestore = FirebaseFirestore.instance;
+
+  void _sendMessage() async {
+    if (_messageController.text.isEmpty) return;
+    await _firestore.collection('messages').add({
+      'text': _messageController.text,
+      'email': widget.user.email,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+    _messageController.clear();
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A1628),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0A1628),
+        title: const Text('Chat', style: TextStyle(color: Colors.white)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.white),
+            onPressed: () =>
+                context.read<AuthBloc>().add(SignOut()),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _firestore
+                  .collection('messages')
+                  .orderBy('timestamp', descending: true)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(
+                    child: CircularProgressIndicator(
+                        color: Color(0xFF378ADD)),
+                  );
+                }
+                final messages = snapshot.data!.docs;
+                if (messages.isEmpty) {
+                  return Center(
+                    child: Text(
+                      'No messages yet\nSay hello 👋',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 16,
+                      ),
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  reverse: true,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final message =
+                        messages[index].data() as Map<String, dynamic>;
+                    final isMe =
+                        message['email'] == widget.user.email;
+                    return Align(
+                      alignment: isMe
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isMe
+                              ? const Color(0xFF378ADD)
+                              : Colors.white.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: isMe
+                              ? CrossAxisAlignment.end
+                              : CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              message['email'] ?? '',
+                              style: TextStyle(
+                                color: Colors.white
+                                    .withValues(alpha: 0.6),
+                                fontSize: 11,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              message['text'] ?? '',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _messageController,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Type a message...',
+                      hintStyle: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.4)),
+                      filled: true,
+                      fillColor:
+                          Colors.white.withValues(alpha: 0.08),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _sendMessage,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF378ADD),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.send,
+                        color: Colors.white, size: 20),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
